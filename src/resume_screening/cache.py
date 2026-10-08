@@ -12,6 +12,7 @@ than failing the run.
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,8 @@ class RunCache:
     def __init__(self, directory: Path | None = None, enabled: bool = True) -> None:
         self.directory = Path(directory) if directory else None
         self.enabled = enabled
+        #: Enrichment runs on a worker pool, so reads/writes are guarded.
+        self._lock = threading.Lock()
         self._memory: dict[str, dict[str, Any]] = {}
         self._dirty: set[str] = set()
         self.stats: dict[str, dict[str, int]] = {}
@@ -68,25 +71,27 @@ class RunCache:
         """Return a cached value or ``None`` on miss / expiry."""
         if not self.enabled:
             return None
-        counter = self._counter(namespace)
-        entry = self._bucket(namespace).get(key)
-        if not isinstance(entry, dict) or "value" not in entry:
-            counter["misses"] += 1
-            return None
-        ttl = DEFAULT_TTL.get(namespace)
-        stored_at = entry.get("stored_at", 0)
-        if ttl is not None and (time.time() - float(stored_at)) > ttl:
-            counter["misses"] += 1
-            return None
-        counter["hits"] += 1
-        return entry["value"]
+        with self._lock:
+            counter = self._counter(namespace)
+            entry = self._bucket(namespace).get(key)
+            if not isinstance(entry, dict) or "value" not in entry:
+                counter["misses"] += 1
+                return None
+            ttl = DEFAULT_TTL.get(namespace)
+            stored_at = entry.get("stored_at", 0)
+            if ttl is not None and (time.time() - float(stored_at)) > ttl:
+                counter["misses"] += 1
+                return None
+            counter["hits"] += 1
+            return entry["value"]
 
     def set(self, namespace: str, key: str, value: Any) -> None:
         if not self.enabled:
             return
-        self._counter(namespace)["writes"] += 1
-        self._bucket(namespace)[key] = {"stored_at": time.time(), "value": value}
-        self._dirty.add(namespace)
+        with self._lock:
+            self._counter(namespace)["writes"] += 1
+            self._bucket(namespace)[key] = {"stored_at": time.time(), "value": value}
+            self._dirty.add(namespace)
 
     # ------------------------------------------------------------------
     def flush(self) -> None:

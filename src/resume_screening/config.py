@@ -76,6 +76,16 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
 @dataclass(frozen=True)
 class Settings:
     """Runtime settings for a single screening run."""
@@ -97,6 +107,8 @@ class Settings:
     # GitHub
     github_token: str = ""
     github_timeout: float = GITHUB_REQUEST_TIMEOUT
+    #: Bounded worker pool used when enriching many profiles in one run.
+    github_max_workers: int = 4
 
     # Misc
     verbose: bool = False
@@ -131,6 +143,7 @@ class Settings:
             llm_timeout=_env_float("LLM_TIMEOUT_SECONDS", LLM_TIMEOUT_SECONDS),
             github_token=os.environ.get("GITHUB_TOKEN", "").strip(),
             github_timeout=_env_float("GITHUB_TIMEOUT_SECONDS", GITHUB_REQUEST_TIMEOUT),
+            github_max_workers=max(1, _env_int("GITHUB_MAX_WORKERS", 4)),
             log_level=os.environ.get("LOG_LEVEL", "INFO").strip() or "INFO",
             use_cache=_env_bool("USE_CACHE", True),
         )

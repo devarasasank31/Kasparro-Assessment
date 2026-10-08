@@ -13,7 +13,9 @@ Guarantees:
 from __future__ import annotations
 
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
@@ -38,6 +40,9 @@ from .utils import get_logger
 log = get_logger("github")
 
 API_ROOT = "https://api.github.com"
+
+#: Per-thread session holder so each worker owns its own ``requests.Session``.
+_thread_local = threading.local()
 USER_AGENT = "resume-screening-bot/1.0"
 RELEVANT_LANGUAGE_RE = re.compile(r"python|jupyter|jupyter notebook", re.I)
 RELEVANT_TOPIC_RE = re.compile(
@@ -224,6 +229,7 @@ def enrich_candidate(
     cache: dict[str, GitHubEnrichment],
     enabled: bool = True,
     store: RunCache | None = None,
+    stop: threading.Event | None = None,
 ) -> GitHubEnrichment:
     """Enrich one candidate. Always returns a result - never raises."""
     if not enabled:
@@ -232,10 +238,37 @@ def enrich_candidate(
     username = extract_username(candidate.github_url)
     if not username:
         return GitHubEnrichment(status="no_profile", profile_url=candidate.github_url)
+    return _enrich_username(
+        username, f"https://github.com/{username}", client, cache, store=store, stop=stop
+    )
+
+
+def _enrich_username(
+    username: str,
+    profile_url: str,
+    client: GitHubClient | None,
+    cache: dict[str, GitHubEnrichment],
+    store: RunCache | None = None,
+    stop: threading.Event | None = None,
+) -> GitHubEnrichment:
+    """Fetch and score one username. Safe to call from a worker thread.
+
+    ``stop`` is shared across workers: once any worker hits the GitHub rate
+    limit the remaining work short-circuits instead of hammering the API.
+    """
     if username in cache:
         return cache[username]
 
-    profile_url = f"https://github.com/{username}"
+    if stop is not None and stop.is_set():
+        result = GitHubEnrichment(
+            username=username,
+            profile_url=profile_url,
+            status="rate_limited",
+            error="run stopped early after GitHub rate limit",
+        )
+        cache[username] = result
+        return result
+
     if store is not None:
         cached = store.get("github", f"enrichment:{username}")
         if isinstance(cached, dict):
@@ -256,11 +289,15 @@ def enrich_candidate(
     now = datetime.now(timezone.utc)
     try:
         profile = client.get(f"/users/{username}")
+        if stop is not None and stop.is_set():
+            raise GitHubAPIError("rate_limited", "run stopped early after GitHub rate limit")
         repos = client.get(
             f"/users/{username}/repos",
             params={"per_page": 100, "sort": "pushed", "type": "owner"},
         )
     except GitHubAPIError as exc:
+        if exc.status == "rate_limited" and stop is not None:
+            stop.set()
         result = GitHubEnrichment(
             username=username,
             profile_url=profile_url,
@@ -325,13 +362,55 @@ def enrich_candidate(
     return result
 
 
+def _worker_client(token: str, timeout: float) -> GitHubClient:
+    """One client per thread - ``requests.Session`` is not shared across threads."""
+    client = getattr(_thread_local, "client", None)
+    if client is None:
+        client = GitHubClient(token=token, timeout=timeout)
+        _thread_local.client = client
+    return client
+
+
+def _prefetch_username(
+    username: str,
+    profile_url: str,
+    cache: dict[str, GitHubEnrichment],
+    store: RunCache | None,
+    stop: threading.Event,
+    token: str,
+    timeout: float,
+    client: GitHubClient | None = None,
+) -> GitHubEnrichment:
+    """Worker body: never raises, so one bad profile cannot fail the batch."""
+    worker = client if client is not None else _worker_client(token, timeout)
+    try:
+        return _enrich_username(username, profile_url, worker, cache, store=store, stop=stop)
+    except Exception as exc:  # noqa: BLE001 - isolate unexpected worker failures
+        log.exception("Unexpected GitHub failure for %s", username)
+        result = GitHubEnrichment(
+            username=username,
+            profile_url=f"https://github.com/{username}",
+            status="error",
+            error=f"{type(exc).__name__}: {exc}",
+        )
+        cache[username] = result
+        return result
+
+
 def enrich_candidates(
     candidates: Iterable[Candidate],
     settings: Settings,
     client: GitHubClient | None = None,
     store: RunCache | None = None,
+    max_workers: int | None = None,
 ) -> tuple[dict[str, GitHubEnrichment], list[dict[str, str]]]:
-    """Enrich every candidate that exposes a GitHub profile."""
+    """Enrich every candidate that exposes a GitHub profile.
+
+    Requests are fanned out over a small, bounded worker pool (one unique
+    username per task). An explicitly injected ``client`` is used
+    single-threaded unless ``max_workers`` is given, because fake sessions in
+    tests are ordered rather than thread-safe.
+    """
     candidates = list(candidates)
     results: dict[str, GitHubEnrichment] = {}
     failures: list[dict[str, str]] = []
@@ -343,10 +422,53 @@ def enrich_candidates(
             )
         return results, failures
 
-    client = client or GitHubClient(token=settings.github_token, timeout=settings.github_timeout)
     cache: dict[str, GitHubEnrichment] = {}
+    stop = threading.Event()
+    workers = settings.github_max_workers if max_workers is None else max_workers
+    if client is not None and max_workers is None:
+        workers = 1
+    workers = max(1, int(workers))
+
+    unique: dict[str, str] = {}
     for candidate in candidates:
-        enrichment = enrich_candidate(candidate, client, cache, enabled=True, store=store)
+        username = extract_username(candidate.github_url)
+        if username:
+            unique.setdefault(username, f"https://github.com/{username}")
+
+    if workers > 1 and len(unique) > 1:
+        pool_size = min(workers, len(unique))
+        log.debug("GitHub enrichment: %d usernames over %d workers", len(unique), pool_size)
+        with ThreadPoolExecutor(max_workers=pool_size, thread_name_prefix="github") as pool:
+            futures = [
+                pool.submit(
+                    _prefetch_username,
+                    username,
+                    profile_url,
+                    cache,
+                    store,
+                    stop,
+                    settings.github_token,
+                    settings.github_timeout,
+                    client,
+                )
+                for username, profile_url in unique.items()
+            ]
+            for future in as_completed(futures):
+                future.result()  # workers never raise; defensive re-check anyway
+
+    for candidate in candidates:
+        try:
+            enrichment = enrich_candidate(
+                candidate, client, cache, enabled=True, store=store, stop=stop
+            )
+        except Exception as exc:  # noqa: BLE001 - one odd profile must not fail the batch
+            log.exception("Unexpected GitHub failure for %s", candidate.source_file)
+            enrichment = GitHubEnrichment(
+                username=extract_username(candidate.github_url),
+                profile_url=candidate.github_url,
+                status="error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
         results[candidate.source_file] = enrichment
         if enrichment.status in {"error", "rate_limited", "not_found"} and candidate.github_url:
             failures.append(
@@ -357,18 +479,10 @@ def enrich_candidates(
                     "error": enrichment.error or "",
                 }
             )
-        if client.rate_limited:
-            # Stop calling the API for the rest of the run, but keep recording
-            # statuses so the output stays honest.
-            for remaining in candidates:
-                if remaining.source_file not in results:
-                    results[remaining.source_file] = GitHubEnrichment(
-                        username=extract_username(remaining.github_url),
-                        profile_url=remaining.github_url,
-                        status="rate_limited",
-                        error="run stopped early after GitHub rate limit",
-                    )
-            break
+        if enrichment.status == "rate_limited":
+            # Do not call the API again for the rest of the run, but keep
+            # recording statuses so the output stays honest.
+            stop.set()
 
     ok = sum(1 for r in results.values() if r.status == "ok")
     log.info("GitHub enrichment complete: %d ok, %d issues", ok, len(failures))

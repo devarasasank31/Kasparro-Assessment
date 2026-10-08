@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 
 import pytest
 import requests
@@ -209,6 +211,105 @@ def test_rate_limited_results_are_not_cached(tmp_path) -> None:
     )
     assert results[candidate.source_file].status == "ok"
     assert len(retrier.calls) == 2
+
+
+class RoutingSession:
+    """URL addressed fake GitHub API that is safe to call from many threads."""
+
+    def __init__(self, profiles: dict, repos: dict, delay: float = 0.0, explode: str | None = None):
+        self.profiles = profiles
+        self.repos = repos
+        self.delay = delay
+        self.explode = explode
+        self._lock = threading.Lock()
+        self.calls: list[str] = []
+        self.in_flight = 0
+        self.peak = 0
+
+    def get(self, url, headers=None, params=None, timeout=None):
+        with self._lock:
+            self.calls.append(url)
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+        try:
+            if self.delay:
+                time.sleep(self.delay)
+            if url.endswith("/repos"):
+                username = url.split("/users/")[1].split("/")[0]
+                if self.explode == username:
+                    raise RuntimeError("unexpected worker failure")
+                return FakeResponse(payload=self.repos.get(username, []))
+            username = url.rsplit("/", 1)[1]
+            if self.explode == username:
+                raise RuntimeError("unexpected worker failure")
+            if username not in self.profiles:
+                return FakeResponse(status_code=404)
+            return FakeResponse(payload=self.profiles[username])
+        finally:
+            with self._lock:
+                self.in_flight -= 1
+
+
+def _batch(count: int) -> list[Candidate]:
+    return [
+        _candidate(f"https://github.com/user-{i}", filename=f"candidate_{i:02d}.pdf")
+        for i in range(count)
+    ]
+
+
+def test_concurrent_enrichment_is_bounded_and_matches_sequential() -> None:
+    profiles = {f"user-{i}": {"public_repos": 4} for i in range(6)}
+    repos = {f"user-{i}": [] for i in range(6)}
+    batch = _batch(6)
+
+    sequential_session = RoutingSession(profiles, repos)
+    sequential, _ = enrich_candidates(
+        batch,
+        Settings(use_github=True, github_max_workers=4),
+        client=GitHubClient(session=sequential_session),
+        max_workers=1,
+    )
+
+    parallel_session = RoutingSession(profiles, repos, delay=0.1)
+    parallel, _ = enrich_candidates(
+        batch,
+        Settings(use_github=True, github_max_workers=4),
+        client=GitHubClient(session=parallel_session),
+        max_workers=3,
+    )
+
+    assert sequential == parallel
+    assert all(r.status == "ok" for r in parallel.values())
+    assert parallel_session.peak <= 3  # bounded pool, never more than asked
+    assert parallel_session.peak >= 2  # work really was overlapped
+
+
+def test_worker_failure_is_isolated_to_one_profile() -> None:
+    profiles = {"good": {"public_repos": 2}, "boom": {"public_repos": 2}}
+    batch = [
+        _candidate("https://github.com/good", filename="a.pdf"),
+        _candidate("https://github.com/boom", filename="b.pdf"),
+        _candidate("https://github.com/good", filename="c.pdf"),
+    ]
+    session = RoutingSession(profiles, {"good": [], "boom": []}, explode="boom")
+
+    results, failures = enrich_candidates(
+        batch,
+        Settings(use_github=True),
+        client=GitHubClient(session=session),
+        max_workers=3,
+    )
+
+    assert results["b.pdf"].status == "error"
+    assert results["b.pdf"].error
+    assert results["a.pdf"].status == "ok"
+    assert results["c.pdf"].status == "ok"
+    assert [f["file"] for f in failures] == ["b.pdf"]
+
+
+def test_default_worker_setting_is_positive_and_small() -> None:
+    settings = Settings.from_env()
+    assert 1 <= settings.github_max_workers <= 8
 
 
 def test_client_requires_valid_json() -> None:

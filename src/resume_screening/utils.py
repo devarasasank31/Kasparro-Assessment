@@ -48,6 +48,8 @@ def normalise_text(text: str) -> str:
     if not text:
         return ""
     text = unicodedata.normalize("NFKC", text)
+    # pdfminer emits "(cid:123)" placeholders for glyphs it cannot map.
+    text = re.sub(r"\(cid:\d+\)", " ", text)
     text = text.replace("\u00a0", " ").replace("\u200b", "")
     text = "".join(ch for ch in text if ch == "\n" or ch == "\t" or unicodedata.category(ch)[0] != "C")
     text = _WHITESPACE_RE.sub(" ", text)

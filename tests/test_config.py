@@ -39,3 +39,10 @@ def test_llm_enabled_requires_api_key() -> None:
     assert Settings(llm_api_key="").llm_enabled is False
     assert Settings(llm_api_key="sk-test").llm_enabled is True
     assert Settings(llm_api_key="sk-test", use_llm=False).llm_enabled is False
+
+
+def test_keyless_providers_run_without_a_key() -> None:
+    assert Settings(llm_provider="echo").llm_enabled is True
+    assert Settings(llm_provider="ollama").llm_enabled is True
+    assert Settings(llm_provider="echo", use_llm=False).llm_enabled is False
+    assert Settings(llm_provider="openai", llm_api_key="").llm_enabled is False

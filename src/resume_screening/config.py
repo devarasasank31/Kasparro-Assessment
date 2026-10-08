@@ -30,6 +30,9 @@ TOTAL_SCORE = sum(SCORE_WEIGHTS.values())  # 100
 #: Minimum number of distinct AI evidence hits required to pass the AI gate.
 MIN_AI_EVIDENCE_HITS = 1
 
+#: Providers that work without an API key (local server / offline adapter).
+KEYLESS_LLM_PROVIDERS = frozenset({"echo", "ollama"})
+
 # --------------------------------------------------------------------------
 # GitHub enrichment (max 10 points, split 5 activity + 5 repositories)
 # --------------------------------------------------------------------------
@@ -124,8 +127,16 @@ class Settings:
     # ------------------------------------------------------------------
     @property
     def llm_enabled(self) -> bool:
-        """LLM is only truly usable when toggled on *and* keyed."""
-        return bool(self.use_llm and self.llm_api_key)
+        """LLM is only truly usable when toggled on *and* the provider can run.
+
+        ``echo`` (offline test adapter) and ``ollama`` (local server) do not
+        need an API key; every other provider does.
+        """
+        if not self.use_llm:
+            return False
+        if self.llm_provider.strip().lower() in KEYLESS_LLM_PROVIDERS:
+            return True
+        return bool(self.llm_api_key)
 
     @property
     def github_enabled(self) -> bool:

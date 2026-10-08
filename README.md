@@ -218,7 +218,7 @@ always present.
 ## Testing & Static Checks
 
 ```bash
-pytest                     # 95 tests
+pytest                     # 97 tests
 ruff check .               # lint (import order, bugbear, modern Python)
 mypy                       # type check (src/)
 pytest tests/test_eligibility.py -v

@@ -144,3 +144,28 @@ def test_github_is_honoured_as_optional_signal(tmp_path: Path) -> None:
     records = [c for c in offline["candidates"] if c["rank"] is not None]
     assert records
     assert all(r["github_status"] == "disabled" for r in records)
+
+
+def test_echo_llm_provider_runs_the_model_stage(tmp_path: Path) -> None:
+    """The keyless `echo` provider proves the model stage works end to end."""
+    result = run_pipeline(
+        Settings(
+            input_dir=FIXTURES,
+            output_path=tmp_path / "llm.json",
+            use_llm=True,
+            llm_provider="echo",
+            use_github=False,
+            use_cache=False,
+        )
+    )
+
+    assert result["summary"]["llm_used"] is True
+    assert result["summary"]["llm_failures"] == 0
+    assert result["summary"]["eligible"] == 2  # eligibility never moves
+
+    with_model = [c for c in result["candidates"] if c.get("llm_used")]
+    assert len(with_model) == 2
+    for record in with_model:
+        assert record["llm_rationale"]
+        assert 0 <= record["llm_ai_project_depth"] <= 40
+        assert abs(record["llm_adjustment"]) <= 6  # bounded nudge, engine stays in charge

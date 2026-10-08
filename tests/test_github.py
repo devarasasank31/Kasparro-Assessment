@@ -3,6 +3,7 @@ import json
 import pytest
 import requests
 
+from resume_screening.cache import RunCache
 from resume_screening.config import Settings
 from resume_screening.extractor import extract_candidate
 from resume_screening.github import (
@@ -169,6 +170,45 @@ def test_github_api_error_carries_status() -> None:
     err = GitHubAPIError("rate_limited", "slow down")
     assert err.status == "rate_limited"
     assert str(err) == "slow down"
+
+
+def test_second_run_serves_github_from_cache(tmp_path) -> None:
+    candidate = _candidate("https://github.com/ada-l")
+    session = FakeSession([FakeResponse(payload={"public_repos": 3}), FakeResponse(payload=[])])
+    client = GitHubClient(session=session)
+    store = RunCache(tmp_path)
+
+    first, _ = enrich_candidates([candidate], Settings(use_github=True), client=client, store=store)
+    store.flush()
+    assert first[candidate.source_file].status == "ok"
+    assert len(session.calls) == 2
+
+    # Second run: a fresh cache read must avoid any further HTTP calls.
+    second, failures = enrich_candidates(
+        [candidate], Settings(use_github=True), client=client, store=RunCache(tmp_path)
+    )
+    assert second[candidate.source_file].status == "ok"
+    assert second[candidate.source_file].total_score == first[candidate.source_file].total_score
+    assert len(session.calls) == 2
+    assert not failures
+
+
+def test_rate_limited_results_are_not_cached(tmp_path) -> None:
+    candidate = _candidate("https://github.com/ada-l")
+    limiter = FakeSession([FakeResponse(status_code=403, headers={"X-RateLimit-Remaining": "0"})])
+    store = RunCache(tmp_path)
+    enrich_candidates(
+        [candidate], Settings(use_github=True), client=GitHubClient(session=limiter), store=store
+    )
+    store.flush()
+
+    # The failure must not poison the cache: a later run retries the API.
+    retrier = FakeSession([FakeResponse(payload={"public_repos": 1}), FakeResponse(payload=[])])
+    results, _ = enrich_candidates(
+        [candidate], Settings(use_github=True), client=GitHubClient(session=retrier), store=RunCache(tmp_path)
+    )
+    assert results[candidate.source_file].status == "ok"
+    assert len(retrier.calls) == 2
 
 
 def test_client_requires_valid_json() -> None:

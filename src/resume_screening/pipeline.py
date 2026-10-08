@@ -9,8 +9,10 @@ aborts the batch.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
+from .cache import RunCache
 from .config import Settings
 from .eligibility import check_eligibility
 from .extractor import extract_candidate
@@ -46,29 +48,56 @@ def _enrich_with_llm(
     candidates: list[Candidate],
     eligibility: dict[str, EligibilityResult],
     settings: Settings,
+    store: RunCache | None = None,
 ) -> tuple[dict[str, LLMAnalysis], list[dict[str, str]]]:
-    """Optional structured model pass over eligible resumes only."""
-    client = build_client(settings)
+    """Optional structured model pass over eligible resumes only.
+
+    Successful responses are cached so a re-run does not re-bill the model.
+    """
     analyses: dict[str, LLMAnalysis] = {}
     failures: list[dict[str, str]] = []
+    if not settings.use_llm or not settings.llm_enabled:
+        log.info("LLM enrichment skipped (disabled or missing credentials)")
+        return analyses, failures
+    client = build_client(settings)
     if client is None:
         return analyses, failures
 
     targets = [c for c in candidates if eligibility[c.source_file].eligible]
     log.info("LLM enrichment: %d eligible resumes via %s", len(targets), settings.llm_provider)
     for candidate in targets:
+        cache_key = _llm_cache_key(candidate, settings)
+        cached = store.get("llm", cache_key) if store is not None else None
+        if isinstance(cached, dict):
+            try:
+                analyses[candidate.source_file] = LLMAnalysis.model_validate(cached)
+                continue
+            except Exception:  # noqa: BLE001 - stale/corrupt entry is just a miss
+                log.warning("Discarding unreadable LLM cache entry for %s", candidate.source_file)
         try:
-            analyses[candidate.source_file] = client.analyse(candidate.full_text)
+            analysis = client.analyse(candidate.full_text)
         except LLMError as exc:
             log.warning("LLM analysis failed for %s: %s", candidate.source_file, exc)
             failures.append({"file": candidate.source_file, "error": str(exc)})
+            continue
         except Exception as exc:  # noqa: BLE001 - a model quirk must not kill the run
             log.exception("Unexpected LLM failure for %s", candidate.source_file)
             failures.append(
                 {"file": candidate.source_file, "error": f"{type(exc).__name__}: {exc}"}
             )
+            continue
+        analyses[candidate.source_file] = analysis
+        if store is not None:
+            store.set("llm", cache_key, analysis.model_dump())
     log.info("LLM enrichment complete: %d ok, %d failed", len(analyses), len(failures))
     return analyses, failures
+
+
+def _llm_cache_key(candidate: Candidate, settings: Settings) -> str:
+    digest = hashlib.sha256(
+        f"{settings.llm_provider}|{settings.llm_model}|{candidate.full_text}".encode("utf-8")
+    ).hexdigest()
+    return f"analysis:{digest}"
 
 
 def _score_all(
@@ -121,10 +150,16 @@ def run_pipeline(settings: Settings) -> dict[str, Any]:
     ingestion = ingest_directory(settings.input_dir)
     counts = ingestion.counts()
 
-    candidates, eligibility, extraction_failures = _extract_all(ingestion.parsed)
-    analyses, llm_failures = _enrich_with_llm(candidates, eligibility, settings)
+    store = RunCache(settings.cache_dir, enabled=settings.use_cache)
+    try:
+        candidates, eligibility, extraction_failures = _extract_all(ingestion.parsed)
+        analyses, llm_failures = _enrich_with_llm(candidates, eligibility, settings, store)
 
-    github_results, github_failures = enrich_candidates(candidates, settings)
+        github_results, github_failures = enrich_candidates(
+            candidates, settings, store=store
+        )
+    finally:
+        store.flush()
 
     scores, scoring_failures = _score_all(candidates, eligibility, analyses, github_results)
 
@@ -159,6 +194,7 @@ def run_pipeline(settings: Settings) -> dict[str, Any]:
             "llm_failures": len(llm_failures),
             "github_enriched": sum(1 for g in github_results.values() if g.status == "ok"),
             "github_failures": len(github_failures),
+            "cache": store.summary(),
             "status": "complete",
         },
         "parse_issues": [r.to_dict() for r in ingestion.resumes if not r.ok],

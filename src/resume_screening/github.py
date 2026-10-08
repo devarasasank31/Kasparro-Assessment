@@ -13,17 +13,21 @@ Guarantees:
 from __future__ import annotations
 
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 import requests
 
+from .cache import RunCache
 from .config import (
     GITHUB_ACTIVITY_MAX,
     GITHUB_MAX_PAGES,
     GITHUB_MAX_REPOS_INSPECTED,
     GITHUB_REPOS_MAX,
     GITHUB_REQUEST_TIMEOUT,
+    HTTP_BACKOFF_SECONDS,
+    HTTP_MAX_RETRIES,
     RECENT_ACTIVITY_DAYS,
     Settings,
 )
@@ -79,14 +83,29 @@ class GitHubClient:
         return headers
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        """GET a GitHub API path. Raises :class:`GitHubAPIError` on failure."""
+        """GET a GitHub API path with bounded retries.
+
+        Transient network errors are retried; 404s and rate limits are not.
+        Raises :class:`GitHubAPIError` on failure.
+        """
         if self.rate_limited:
             raise GitHubAPIError("rate_limited", "run already rate limited")
         url = f"{API_ROOT}{path}"
-        try:
-            response = self.session.get(url, headers=self.headers, params=params, timeout=self.timeout)
-        except requests.RequestException as exc:
-            raise GitHubAPIError("error", f"network error: {exc}") from exc
+        response: requests.Response | None = None
+        last_error: Exception | None = None
+        for attempt in range(HTTP_MAX_RETRIES + 1):
+            try:
+                response = self.session.get(
+                    url, headers=self.headers, params=params, timeout=self.timeout
+                )
+                last_error = None
+                break
+            except requests.RequestException as exc:
+                last_error = exc
+                if attempt < HTTP_MAX_RETRIES:
+                    time.sleep(HTTP_BACKOFF_SECONDS * (attempt + 1))
+        if last_error is not None or response is None:
+            raise GitHubAPIError("error", f"network error: {last_error}") from last_error
 
         if response.status_code == 404:
             raise GitHubAPIError("not_found", "profile or resource not found")
@@ -204,6 +223,7 @@ def enrich_candidate(
     client: GitHubClient | None,
     cache: dict[str, GitHubEnrichment],
     enabled: bool = True,
+    store: RunCache | None = None,
 ) -> GitHubEnrichment:
     """Enrich one candidate. Always returns a result - never raises."""
     if not enabled:
@@ -216,6 +236,18 @@ def enrich_candidate(
         return cache[username]
 
     profile_url = f"https://github.com/{username}"
+    if store is not None:
+        cached = store.get("github", f"enrichment:{username}")
+        if isinstance(cached, dict):
+            try:
+                result = GitHubEnrichment.model_validate(cached)
+            except Exception:  # noqa: BLE001 - a stale/corrupt entry is just a miss
+                result = None  # type: ignore[assignment]
+            if result is not None:
+                cache[username] = result
+                log.debug("GitHub cache hit for %s", username)
+                return result
+
     if client is None:
         result = GitHubEnrichment(username=username, profile_url=profile_url, status="disabled")
         cache[username] = result
@@ -287,6 +319,8 @@ def enrich_candidate(
         recent_repos=recent,
         last_activity=(f"{last_activity_days} days ago" if last_activity_days is not None else None),
     )
+    if store is not None:
+        store.set("github", f"enrichment:{username}", result.model_dump())
     cache[username] = result
     return result
 
@@ -295,6 +329,7 @@ def enrich_candidates(
     candidates: Iterable[Candidate],
     settings: Settings,
     client: GitHubClient | None = None,
+    store: RunCache | None = None,
 ) -> tuple[dict[str, GitHubEnrichment], list[dict[str, str]]]:
     """Enrich every candidate that exposes a GitHub profile."""
     candidates = list(candidates)
@@ -311,7 +346,7 @@ def enrich_candidates(
     client = client or GitHubClient(token=settings.github_token, timeout=settings.github_timeout)
     cache: dict[str, GitHubEnrichment] = {}
     for candidate in candidates:
-        enrichment = enrich_candidate(candidate, client, cache, enabled=True)
+        enrichment = enrich_candidate(candidate, client, cache, enabled=True, store=store)
         results[candidate.source_file] = enrichment
         if enrichment.status in {"error", "rate_limited", "not_found"} and candidate.github_url:
             failures.append(

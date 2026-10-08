@@ -102,6 +102,7 @@ class Settings:
     verbose: bool = False
     log_level: str = "INFO"
     cache_dir: Path = Path(".cache")
+    use_cache: bool = True
 
     # Scoring weights (kept here so tests can override)
     weights: Mapping[str, int] = field(default_factory=lambda: dict(SCORE_WEIGHTS))
@@ -129,6 +130,7 @@ class Settings:
             github_token=os.environ.get("GITHUB_TOKEN", "").strip(),
             github_timeout=_env_float("GITHUB_TIMEOUT_SECONDS", GITHUB_REQUEST_TIMEOUT),
             log_level=os.environ.get("LOG_LEVEL", "INFO").strip() or "INFO",
+            use_cache=_env_bool("USE_CACHE", True),
         )
         if overrides:
             base = replace(base, **overrides)  # type: ignore[arg-type]
@@ -144,6 +146,7 @@ class Settings:
         model: str | None = None,
         no_llm: bool = False,
         no_github: bool = False,
+        no_cache: bool = False,
         verbose: bool = False,
         **env_overrides: object,
     ) -> "Settings":
@@ -153,6 +156,7 @@ class Settings:
             "output_path": Path(output_path),
             "use_llm": not no_llm,
             "use_github": not no_github,
+            "use_cache": not no_cache,
             "verbose": verbose,
         }
         if model:

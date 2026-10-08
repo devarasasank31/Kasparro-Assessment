@@ -26,6 +26,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", default=None, help="Override the LLM model name")
     parser.add_argument("--no-llm", action="store_true", help="Disable LLM enrichment entirely")
     parser.add_argument("--no-github", action="store_true", help="Disable GitHub enrichment entirely")
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Ignore and do not write the .cache run cache (forces fresh API calls)",
+    )
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
@@ -43,6 +48,7 @@ def main(argv: list[str] | None = None) -> int:
         model=args.model,
         no_llm=args.no_llm,
         no_github=args.no_github,
+        no_cache=args.no_cache,
         verbose=args.verbose,
     )
 

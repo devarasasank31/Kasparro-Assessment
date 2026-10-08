@@ -36,9 +36,9 @@ MIN_AI_EVIDENCE_HITS = 1
 GITHUB_ACTIVITY_MAX = 5
 GITHUB_REPOS_MAX = 5
 GITHUB_MAX_REPOS_INSPECTED = 30
+#: Repos pushed inside this window count as "recent" activity.
 GITHUB_EVENT_WINDOW_DAYS = 90
 GITHUB_REQUEST_TIMEOUT = 10.0
-GITHUB_MAX_PAGES = 3
 
 # --------------------------------------------------------------------------
 # Network / reliability

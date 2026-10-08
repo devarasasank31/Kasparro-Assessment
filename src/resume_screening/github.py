@@ -25,6 +25,7 @@ import requests
 from .cache import RunCache
 from .config import (
     GITHUB_ACTIVITY_MAX,
+    GITHUB_EVENT_WINDOW_DAYS,
     GITHUB_MAX_REPOS_INSPECTED,
     GITHUB_REPOS_MAX,
     GITHUB_REQUEST_TIMEOUT,
@@ -153,14 +154,14 @@ def _activity_score(recent_push_days: list[int], now: datetime) -> float:
     newest = min(recent_push_days)
     if newest <= 30:
         recency = 3.0
-    elif newest <= 90:
+    elif newest <= GITHUB_EVENT_WINDOW_DAYS:
         recency = 2.0
     elif newest <= RECENT_ACTIVITY_DAYS:
         recency = 1.0
     else:
         recency = 0.0
 
-    active_count = sum(1 for age in recent_push_days if age <= 90)
+    active_count = sum(1 for age in recent_push_days if age <= GITHUB_EVENT_WINDOW_DAYS)
     if active_count >= 5:
         volume = 2.0
     elif active_count >= 2:
@@ -321,7 +322,7 @@ def _enrich_username(
     activity = _activity_score(ages, now)
     repository = _repository_score(repos, now)
     public_repos = int(profile.get("public_repos") or 0)
-    recent = sum(1 for age in ages if age <= 90)
+    recent = sum(1 for age in ages if age <= GITHUB_EVENT_WINDOW_DAYS)
     relevant = sum(
         1
         for repo in repos[:GITHUB_MAX_REPOS_INSPECTED]

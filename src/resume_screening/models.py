@@ -141,24 +141,3 @@ class GitHubEnrichment(BaseModel):
 
     def as_dict(self) -> dict[str, Any]:
         return self.model_dump()
-
-
-class ScreeningResult(BaseModel):
-    """Final, JSON-serialisable record for one candidate."""
-
-    rank: int | None = None
-    candidate_name: str
-    source_file: str
-    eligible: bool
-    total_score: float | None = None
-    score_breakdown: dict[str, float] | None = None
-    matched_skills: list[str] = Field(default_factory=list)
-    project_summary: str = ""
-    github_summary: str = ""
-    github_status: str = "no_profile"
-    strengths: list[str] = Field(default_factory=list)
-    concerns: list[str] = Field(default_factory=list)
-    rejection_reasons: list[str] = Field(default_factory=list)
-    evidence: dict[str, list[str]] = Field(default_factory=dict)
-    score_evidence: list[dict[str, Any]] = Field(default_factory=list)
-    enrichment: dict[str, Any] = Field(default_factory=dict)

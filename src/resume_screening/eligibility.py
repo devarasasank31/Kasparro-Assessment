@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 
+from .config import MIN_AI_EVIDENCE_HITS
 from .extractor import _is_heading
 from .models import Candidate, EligibilityResult
 from .skills import scan_skills
@@ -187,7 +188,7 @@ def check_eligibility(candidate: Candidate) -> EligibilityResult:
     rejection_reasons: list[str] = []
     if not python_evidence:
         rejection_reasons.append("No evidence of Python stack")
-    if not ai_hits:
+    if len(ai_hits) < MIN_AI_EVIDENCE_HITS:
         rejection_reasons.append("No AI/agentic project evidence")
 
     matched_skills = scan_skills(candidate.full_text)

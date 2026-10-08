@@ -33,6 +33,9 @@ def setup_logging(verbose: bool = False, level: str | None = None) -> None:
         )
         root.addHandler(handler)
     root.propagate = False
+    # Third-party parsers are chatty about cosmetic PDF issues; keep them quiet
+    # unless we are actually debugging.
+    logging.getLogger("pdfminer").setLevel(logging.CRITICAL if not verbose else logging.DEBUG)
 
 
 def normalise_text(text: str) -> str:

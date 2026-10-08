@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .models import Candidate, Experience, Project
 from .parser import ParsedResume
-from .skills import group_skills, is_bullet, scan_skills, strip_bullet
+from .skills import is_bullet, scan_skills, strip_bullet
 from .utils import dedupe_preserve_order, get_logger
 
 log = get_logger("extractor")
@@ -202,9 +202,7 @@ def _looks_like_name(candidate: str) -> bool:
     lowered = candidate.lower()
     if any(blocked in lowered for blocked in _NAME_BLOCKLIST):
         return False
-    if not candidate[0].isupper():
-        return False
-    return True
+    return candidate[0].isupper()
 
 
 def extract_name(header: str, source_file: str) -> tuple[str, list[str]]:
@@ -302,9 +300,7 @@ def _starts_new_block(line: str, previous: str | None, has_current: bool) -> boo
         return True
     if len(line) <= 90 and not _DESC_START_RE.match(line):
         return True
-    if previous is not None and previous.strip() == "":
-        return True
-    return False
+    return previous is not None and previous.strip() == ""
 
 
 def _split_blocks(section: str) -> list[str]:
@@ -359,10 +355,7 @@ def parse_projects(section: str) -> list[Project]:
         bullets = [strip_bullet(line) for line in lines[1:] if is_bullet(line)]
         body_lines = [strip_bullet(line) for line in lines[1:]]
         summary = " ".join(body_lines).strip()
-        if techs:
-            derived = []
-        else:
-            derived = scan_skills(block)
+        derived = [] if techs else scan_skills(block)
         projects.append(
             Project(
                 name=name or "Untitled project",

@@ -2,15 +2,15 @@ import json
 
 import pytest
 
+from resume_screening.config import Settings
 from resume_screening.llm import (
+    HTTPChatClient,
     LLMAnalysis,
     LLMError,
-    HTTPChatClient,
     build_client,
     extract_json,
     parse_llm_response,
 )
-from resume_screening.config import Settings
 
 VALID = json.dumps(
     {

@@ -8,9 +8,9 @@ ever read from environment variables.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Mapping
 
 # --------------------------------------------------------------------------
 # Scoring weights (total = 100)
@@ -133,7 +133,7 @@ class Settings:
 
     # ------------------------------------------------------------------
     @classmethod
-    def from_env(cls, **overrides: object) -> "Settings":
+    def from_env(cls, **overrides: object) -> Settings:
         """Build settings from environment variables plus explicit overrides."""
         base = cls(
             llm_provider=os.environ.get("LLM_PROVIDER", "openai").strip() or "openai",
@@ -165,7 +165,7 @@ class Settings:
         limit: int = 0,
         verbose: bool = False,
         **env_overrides: object,
-    ) -> "Settings":
+    ) -> Settings:
         """Combine CLI arguments (highest precedence) with environment values."""
         overrides: dict[str, object] = {
             "input_dir": Path(input_dir),

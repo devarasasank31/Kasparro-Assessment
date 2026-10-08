@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
     except FileNotFoundError as exc:
         log.error("%s", exc)
         return 2
-    except Exception:  # noqa: BLE001 - top-level guard keeps the CLI informative
+    except Exception:  # broad by design: the CLI must stay informative
         log.exception("Pipeline failed")
         return 1
 

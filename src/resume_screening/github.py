@@ -15,16 +15,16 @@ from __future__ import annotations
 import re
 import threading
 import time
+from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable
+from typing import Any
 
 import requests
 
 from .cache import RunCache
 from .config import (
     GITHUB_ACTIVITY_MAX,
-    GITHUB_MAX_PAGES,
     GITHUB_MAX_REPOS_INSPECTED,
     GITHUB_REPOS_MAX,
     GITHUB_REQUEST_TIMEOUT,
@@ -385,7 +385,7 @@ def _prefetch_username(
     worker = client if client is not None else _worker_client(token, timeout)
     try:
         return _enrich_username(username, profile_url, worker, cache, store=store, stop=stop)
-    except Exception as exc:  # noqa: BLE001 - isolate unexpected worker failures
+    except Exception as exc:  # broad by design: isolate unexpected worker failures
         log.exception("Unexpected GitHub failure for %s", username)
         result = GitHubEnrichment(
             username=username,
@@ -461,7 +461,7 @@ def enrich_candidates(
             enrichment = enrich_candidate(
                 candidate, client, cache, enabled=True, store=store, stop=stop
             )
-        except Exception as exc:  # noqa: BLE001 - one odd profile must not fail the batch
+        except Exception as exc:  # broad by design: one odd profile must not fail the batch
             log.exception("Unexpected GitHub failure for %s", candidate.source_file)
             enrichment = GitHubEnrichment(
                 username=extract_username(candidate.github_url),

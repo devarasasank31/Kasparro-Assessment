@@ -7,7 +7,8 @@ file, so a re-run over the same inputs always produces the same ordering.
 from __future__ import annotations
 
 import statistics
-from typing import TYPE_CHECKING, Any, Iterable
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any
 
 from .utils import get_logger
 
@@ -35,12 +36,12 @@ def fit_tier(total: float) -> str:
 
 
 def rank_candidates(
-    candidates: Iterable["Candidate"],
-    scores: dict[str, "ScoreResult"],
-) -> list["Candidate"]:
+    candidates: Iterable[Candidate],
+    scores: dict[str, ScoreResult],
+) -> list[Candidate]:
     """Return candidates ordered best-first with deterministic tie-breaking."""
 
-    def sort_key(candidate: "Candidate") -> tuple[float, str, str]:
+    def sort_key(candidate: Candidate) -> tuple[float, str, str]:
         score = scores.get(candidate.source_file)
         total = score.total() if score is not None else float("-inf")
         return (-total, candidate.name.lower(), candidate.source_file)
@@ -50,7 +51,7 @@ def rank_candidates(
     return ranked
 
 
-def score_stats(ranked: Iterable["Candidate"], scores: dict[str, "ScoreResult"]) -> dict[str, Any]:
+def score_stats(ranked: Iterable[Candidate], scores: dict[str, ScoreResult]) -> dict[str, Any]:
     """Batch level distribution of total scores (handy for the report)."""
     values = sorted(scores[c.source_file].total() for c in ranked)
     if not values:

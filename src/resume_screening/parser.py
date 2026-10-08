@@ -9,11 +9,11 @@ Responsibilities:
 from __future__ import annotations
 
 import hashlib
-import io
 import zipfile
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Literal
 from xml.etree import ElementTree
 
 from .utils import get_logger, normalise_text

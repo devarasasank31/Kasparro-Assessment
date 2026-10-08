@@ -8,7 +8,7 @@ makes the final ranking explainable.
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 # canonical name -> aliases (matched case-insensitively with boundaries)
 VOCAB: dict[str, list[str]] = {

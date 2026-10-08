@@ -33,10 +33,10 @@ BASE_FIELDS = (
 
 
 def base_record(
-    candidate: "Candidate",
-    eligibility: "EligibilityResult",
-    github: "GitHubEnrichment | None",
-    analysis: "LLMAnalysis | None",
+    candidate: Candidate,
+    eligibility: EligibilityResult,
+    github: GitHubEnrichment | None,
+    analysis: LLMAnalysis | None,
 ) -> dict[str, Any]:
     return {
         "candidate_name": candidate.name,
@@ -53,10 +53,10 @@ def base_record(
 
 
 def score_record(
-    candidate: "Candidate",
-    score: "ScoreResult",
+    candidate: Candidate,
+    score: ScoreResult,
     rank: int,
-    analysis: "LLMAnalysis | None",
+    analysis: LLMAnalysis | None,
 ) -> dict[str, Any]:
     total = score.total()
     return {
@@ -72,7 +72,7 @@ def score_record(
     }
 
 
-def _llm_fields(analysis: "LLMAnalysis | None") -> dict[str, Any]:
+def _llm_fields(analysis: LLMAnalysis | None) -> dict[str, Any]:
     if analysis is None:
         return {}
     return {
@@ -83,14 +83,14 @@ def _llm_fields(analysis: "LLMAnalysis | None") -> dict[str, Any]:
 
 
 def build_records(
-    candidates: list["Candidate"],
-    eligibility: dict[str, "EligibilityResult"],
-    scores: dict[str, "ScoreResult"],
-    ranked: list["Candidate"],
-    unscored: list["Candidate"],
-    rejected: list["Candidate"],
-    analyses: dict[str, "LLMAnalysis"],
-    github_results: dict[str, "GitHubEnrichment"],
+    candidates: list[Candidate],
+    eligibility: dict[str, EligibilityResult],
+    scores: dict[str, ScoreResult],
+    ranked: list[Candidate],
+    unscored: list[Candidate],
+    rejected: list[Candidate],
+    analyses: dict[str, LLMAnalysis],
+    github_results: dict[str, GitHubEnrichment],
 ) -> list[dict[str, Any]]:
     """Ranked candidates first, then unscored, then rejected - stable order."""
     output: list[dict[str, Any]] = []

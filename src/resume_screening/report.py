@@ -10,7 +10,7 @@ LINE_WIDTH = 100
 def _bar(value: float, maximum: float, width: int = 12) -> str:
     if maximum <= 0:
         return " " * width
-    filled = int(round((value / maximum) * width))
+    filled = round((value / maximum) * width)
     return "#" * filled + "-" * (width - filled)
 
 
@@ -70,7 +70,7 @@ def format_report(result: dict[str, Any], top: int = 10) -> str:
             f"{record.get('rank'):>3}  "
             f"{_truncate(str(record.get('candidate_name', '')), 24):<24} "
             f"{record.get('total_score'):>6} "
-            f"{str(record.get('fit_tier', '')):<15} "
+            f"{record.get('fit_tier', '')!s:<15} "
             f"{_bar(float(breakdown.get('ai_project_depth', 0)), 40)} "
             f"{_bar(float(breakdown.get('python_backend', 0)), 30)} "
             f"{record.get('github_status', 'no_profile'):<10}"

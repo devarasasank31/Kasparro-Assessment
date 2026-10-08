@@ -68,7 +68,7 @@ def test_flush_does_not_raise_when_the_path_is_a_directory(tmp_path) -> None:
     cache = RunCache(tmp_path)
     cache.set("github", "k", 1)
     cache.flush()  # must not raise
-    assert "github" not in [p for p in cache._dirty]  # noqa: SLF001
+    assert "github" not in [p for p in cache._dirty]  # private state checked on purpose
 
 
 def test_cache_is_never_required(tmp_path) -> None:

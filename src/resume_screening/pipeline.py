@@ -79,7 +79,7 @@ def _extract_all(resumes: list[Any]) -> tuple[list[Candidate], dict[str, Eligibi
             candidate = extract_candidate(resume)
             eligibility[candidate.source_file] = check_eligibility(candidate)
             candidates.append(candidate)
-        except Exception as exc:  # noqa: BLE001 - isolate failures per resume
+        except Exception as exc:  # broad by design: isolate failures per resume
             log.exception("Extraction failed for %s", resume.filename)
             failures.append({"file": resume.filename, "error": f"{type(exc).__name__}: {exc}"})
     return candidates, eligibility, failures
@@ -121,7 +121,7 @@ def _enrich_with_llm(
             log.warning("LLM analysis failed for %s: %s", candidate.source_file, exc)
             failures.append({"file": candidate.source_file, "error": str(exc)})
             continue
-        except Exception as exc:  # noqa: BLE001 - a model quirk must not kill the run
+        except Exception as exc:  # broad by design: a model quirk must not kill the run
             log.exception("Unexpected LLM failure for %s", candidate.source_file)
             failures.append(
                 {"file": candidate.source_file, "error": f"{type(exc).__name__}: {exc}"}
@@ -136,7 +136,7 @@ def _enrich_with_llm(
 
 def _llm_cache_key(candidate: Candidate, settings: Settings) -> str:
     digest = hashlib.sha256(
-        f"{settings.llm_provider}|{settings.llm_model}|{candidate.full_text}".encode("utf-8")
+        f"{settings.llm_provider}|{settings.llm_model}|{candidate.full_text}".encode()
     ).hexdigest()
     return f"analysis:{digest}"
 
@@ -145,7 +145,7 @@ def _score_all(
     candidates: list[Candidate],
     eligibility: dict[str, EligibilityResult],
     analyses: dict[str, LLMAnalysis],
-    github_results: dict[str, Any] | None = None,
+    github_results: dict[str, Any],
 ) -> tuple[dict[str, ScoreResult], list[dict[str, str]]]:
     scores: dict[str, ScoreResult] = {}
     failures: list[dict[str, str]] = []
@@ -160,7 +160,7 @@ def _score_all(
             baseline = 0.0
             try:
                 baseline = score_candidate(candidate, eligibility[source]).breakdown.ai_project_depth
-            except Exception:  # noqa: BLE001 - baseline is only used for the nudge
+            except Exception:  # broad by design: baseline is only used for the nudge
                 log.exception("Baseline scoring failed for %s", source)
             adjustment = analysis.set_deterministic_depth(baseline)
             if analysis.project_summaries:
@@ -173,7 +173,7 @@ def _score_all(
                 llm_adjustment=adjustment,
                 project_summary_override=summary_override,
             )
-        except Exception as exc:  # noqa: BLE001 - scoring must never abort the batch
+        except Exception as exc:  # broad by design: scoring must never abort the batch
             log.exception("Scoring failed for %s", source)
             failures.append({"file": source, "error": f"{type(exc).__name__}: {exc}"})
     return scores, failures

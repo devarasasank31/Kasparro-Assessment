@@ -67,7 +67,7 @@ class Candidate(BaseModel):
 
     def section_text(self, *names: str) -> str:
         """Concatenate the raw text of the requested sections."""
-        parts = [self.sections[n] for n in names if n in self.sections and self.sections[n]]
+        parts = [self.sections[n] for n in names if self.sections.get(n)]
         return "\n".join(parts)
 
 

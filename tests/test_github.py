@@ -129,6 +129,7 @@ def test_rate_limit_stops_further_requests() -> None:
 
     assert results["a.pdf"].status == "rate_limited"
     assert results["b.pdf"].status == "rate_limited"
+    assert [f["status"] for f in failures] == ["rate_limited", "rate_limited"]
     assert len(session.calls) == 1  # no hammering after the limit
 
 

@@ -18,7 +18,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from .config import MAX_PROJECT_PENALTY, SHALLOW_PROJECT_PENALTY, SCORE_WEIGHTS
+from .config import MAX_PROJECT_PENALTY, SCORE_WEIGHTS, SHALLOW_PROJECT_PENALTY
 from .models import (
     Candidate,
     EligibilityResult,

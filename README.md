@@ -213,10 +213,12 @@ always present.
 - Offline by design: `--no-github` / `--no-llm` / `--no-cache` produce a fully
   local run.
 
-## Testing
+## Testing & Static Checks
 
 ```bash
 pytest                     # 95 tests
+ruff check .               # lint (import order, bugbear, modern Python)
+mypy                       # type check (src/)
 pytest tests/test_eligibility.py -v
 ```
 

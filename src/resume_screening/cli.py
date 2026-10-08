@@ -10,6 +10,7 @@ from pathlib import Path
 from . import __version__
 from .config import Settings, load_dotenv
 from .pipeline import run_pipeline
+from .report import format_report
 from .utils import get_logger, setup_logging
 
 log = get_logger("cli")
@@ -31,6 +32,18 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Ignore and do not write the .cache run cache (forces fresh API calls)",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="Process only the first N resumes (0 = all); handy for smoke tests",
+    )
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="Print a terminal report with the top candidates after the run",
+    )
+    parser.add_argument("--top", type=int, default=10, help="Rows shown by --report")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
@@ -49,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         no_llm=args.no_llm,
         no_github=args.no_github,
         no_cache=args.no_cache,
+        limit=args.limit,
         verbose=args.verbose,
     )
 
@@ -77,6 +91,8 @@ def main(argv: list[str] | None = None) -> int:
         summary.get("failed"),
         output_path,
     )
+    if args.report:
+        print(format_report(result, top=max(args.top, 1)))
     return 0
 
 

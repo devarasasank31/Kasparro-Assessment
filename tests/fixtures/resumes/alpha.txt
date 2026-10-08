@@ -1,0 +1,19 @@
+Asha Rao
+Email: asha@example.com | Phone: +91 9876543210
+GitHub: https://github.com/asha-rao
+
+Skills
+Python, FastAPI, PostgreSQL, LangGraph, LangChain, Docker, GCP, Redis, pytest
+
+Projects
+AI Ops Agent
+Built a stateful LangGraph agent in Python that triages incident tickets with tool calling,
+retrieval over runbooks and an evaluation harness for answer quality.
+- Implemented a FastAPI backend with async endpoints, Redis caching and Postgres persistence
+- Added tracing with OpenTelemetry, retry/backoff on tool failures and pytest coverage
+- Deployed the service to GCP with Docker and a GitHub Actions pipeline
+
+Experience
+Software Engineering Intern, Acme Corp (Jun 2024 - Aug 2024)
+- Built Python data pipelines processing 2M events/day and added Prometheus dashboards
+- Reduced p95 latency by 40% through connection pooling and query tuning

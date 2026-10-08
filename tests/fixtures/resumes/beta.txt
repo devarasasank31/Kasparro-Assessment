@@ -1,0 +1,16 @@
+Ravi Kumar
+Email: ravi@example.com
+GitHub: https://github.com/ravi-kumar-dev
+
+Skills
+Python, Django, React, LlamaIndex, Docker, MySQL
+
+Projects
+Doc Q&A Service
+RAG pipeline using LlamaIndex with embeddings and vector search over PDF documents,
+served by a FastAPI endpoint with chunking and reranking.
+- Implemented an evaluation harness comparing retrieval hit-rate across chunk sizes
+
+Experience
+Backend Intern, Finch Labs (Jan 2024 - Mar 2024)
+- Wrote Django REST endpoints and wrote unit tests for the billing module

@@ -150,6 +150,10 @@ def run_pipeline(settings: Settings) -> dict[str, Any]:
         raise FileNotFoundError(f"Input directory not found: {settings.input_dir}")
 
     ingestion = ingest_directory(settings.input_dir)
+    if settings.limit and settings.limit < len(ingestion.resumes):
+        ingestion.resumes = ingestion.resumes[: settings.limit]
+        ingestion.total_files = len(ingestion.resumes)
+        log.info("Limiting run to the first %d resumes", settings.limit)
     counts = ingestion.counts()
 
     store = RunCache(settings.cache_dir, enabled=settings.use_cache)
@@ -197,7 +201,10 @@ def run_pipeline(settings: Settings) -> dict[str, Any]:
             "score_stats": score_stats(ranked, scores),
             "status": "complete",
         },
-        "parse_issues": [r.to_dict() for r in ingestion.resumes if not r.ok],
+        "parse_issues": [
+            r.to_dict() for r in ingestion.resumes if r.status not in {"parsed", "duplicate"}
+        ],
+        "duplicates": [r.filename for r in ingestion.duplicates],
         "failures": {
             "extraction": extraction_failures,
             "llm": llm_failures,

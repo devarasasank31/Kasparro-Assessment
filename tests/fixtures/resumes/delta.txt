@@ -1,0 +1,14 @@
+Karan Patel
+Email: karan@example.com
+
+Skills
+Python, Flask, MySQL, Pandas, NumPy
+
+Projects
+Sales Dashboard
+Built a Flask dashboard that aggregates sales data with Pandas and renders chart.js graphs.
+- Implemented CSV ingestion, validation and scheduled nightly refresh
+
+Experience
+Data Intern, Metrics Co (May 2024 - Jul 2024)
+- Wrote Python scripts for data cleaning and produced weekly reports

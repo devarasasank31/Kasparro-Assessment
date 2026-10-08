@@ -1,0 +1,14 @@
+Meera Shah
+Email: meera@example.com
+
+Skills
+Java, React, Spring Boot, MySQL, HTML, CSS
+
+Projects
+E-commerce Platform
+Built a Spring Boot REST API with a React storefront, JWT auth and MySQL persistence.
+- Implemented order management, invoicing and an admin dashboard
+
+Experience
+Web Developer Intern, Bright Web (Feb 2024 - Apr 2024)
+- Delivered responsive React components and integrated REST endpoints

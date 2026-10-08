@@ -103,6 +103,8 @@ class Settings:
     log_level: str = "INFO"
     cache_dir: Path = Path(".cache")
     use_cache: bool = True
+    #: 0 = process every resume; N > 0 stops after N files (smoke tests).
+    limit: int = 0
 
     # Scoring weights (kept here so tests can override)
     weights: Mapping[str, int] = field(default_factory=lambda: dict(SCORE_WEIGHTS))
@@ -147,6 +149,7 @@ class Settings:
         no_llm: bool = False,
         no_github: bool = False,
         no_cache: bool = False,
+        limit: int = 0,
         verbose: bool = False,
         **env_overrides: object,
     ) -> "Settings":
@@ -157,6 +160,7 @@ class Settings:
             "use_llm": not no_llm,
             "use_github": not no_github,
             "use_cache": not no_cache,
+            "limit": max(int(limit), 0),
             "verbose": verbose,
         }
         if model:

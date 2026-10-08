@@ -11,8 +11,9 @@ from __future__ import annotations
 from typing import Any
 
 from .config import Settings
+from .eligibility import check_eligibility
 from .extractor import extract_candidate
-from .models import Candidate
+from .models import Candidate, EligibilityResult
 from .parser import ingest_directory
 from .utils import get_logger
 
@@ -29,17 +30,28 @@ def run_pipeline(settings: Settings) -> dict[str, Any]:
     counts = ingestion.counts()
 
     candidates: list[Candidate] = []
+    eligibility: dict[str, EligibilityResult] = {}
     extraction_failures: list[dict[str, str]] = []
     for resume in ingestion.parsed:
         try:
-            candidates.append(extract_candidate(resume))
+            candidate = extract_candidate(resume)
+            eligibility[candidate.source_file] = check_eligibility(candidate)
+            candidates.append(candidate)
         except Exception as exc:  # noqa: BLE001 - isolate failures per resume
             log.exception("Extraction failed for %s", resume.filename)
             extraction_failures.append(
                 {"file": resume.filename, "error": f"{type(exc).__name__}: {exc}"}
             )
 
-    log.info("Extracted %d candidates (%d extraction failures)", len(candidates), len(extraction_failures))
+    eligible = [c for c in candidates if eligibility[c.source_file].eligible]
+    rejected = [c for c in candidates if not eligibility[c.source_file].eligible]
+    log.info(
+        "Extracted %d candidates (%d extraction failures) -> %d eligible, %d rejected",
+        len(candidates),
+        len(extraction_failures),
+        len(eligible),
+        len(rejected),
+    )
 
     return {
         "summary": {
@@ -48,23 +60,22 @@ def run_pipeline(settings: Settings) -> dict[str, Any]:
             "failed": counts["failed"],
             "duplicates": counts["duplicates"],
             "extracted": len(candidates),
-            "eligible": 0,
-            "rejected": 0,
-            "status": "extracted",
+            "eligible": len(eligible),
+            "rejected": len(rejected),
+            "status": "filtered",
         },
         "extraction_failures": extraction_failures,
-        "parse_issues": [
-            r.to_dict() for r in ingestion.resumes if not r.ok
-        ],
+        "parse_issues": [r.to_dict() for r in ingestion.resumes if not r.ok],
         "candidates": [
             {
                 "candidate_name": c.name,
                 "source_file": c.source_file,
-                "email": c.email,
+                "eligible": eligibility[c.source_file].eligible,
+                "rejection_reasons": eligibility[c.source_file].rejection_reasons,
+                "matched_skills": eligibility[c.source_file].matched_skills[:15],
+                "python_evidence": eligibility[c.source_file].python_evidence[:2],
+                "ai_evidence": eligibility[c.source_file].ai_evidence[:3],
                 "github": c.github_url,
-                "skills": c.skills[:15],
-                "projects": len(c.projects),
-                "experiences": len(c.experiences),
             }
             for c in candidates
         ],

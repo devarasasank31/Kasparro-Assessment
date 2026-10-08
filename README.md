@@ -173,17 +173,19 @@ Rules that keep it honest:
 
 ```json
 {
-  "run": {"tool_version": "1.0.0", "python": "3.11.1", "started_at": "...",
-           "duration_ms": 1820.5,
+  "run": {"tool_version": "1.0.0", "python": "3.11.1", "started_at": "2026-10-08T09:33:20+00:00",
+           "duration_ms": 21047.2,
            "settings": {"use_llm": false, "use_github": true, "weights": {"ai_project_depth": 40, "...": "..."}}},
   "summary": {"total_resumes": 50, "parsed": 50, "failed": 0, "duplicates": 0,
                "eligible": 39, "rejected": 11, "scored": 39,
                "llm_used": false, "github_enriched": 18, "github_failures": 1,
-               "score_stats": {"mean": 64.64, "median": 68.0, "strong_fit": 9, "...": "..."},
-               "stages_ms": {"ingest": 1450.0, "github": 820.3, "...": "..."},
+               "score_stats": {"mean": 67.63, "median": 69.5, "strong_fit": 11, "good_fit": 13, "...": "..."},
+               "stages_ms": {"ingest": 13390.1, "github": 3002.3, "score": 368.8, "...": "..."},
                "status": "complete"},
   "parse_issues": [], "duplicates": [],
-  "failures": {"extraction": [], "llm": [], "github": [], "scoring": []},
+  "failures": {"extraction": [], "llm": [], "scoring": [],
+                "github": [{"file": "candidate_23.pdf", "username": "annishasaravan",
+                             "status": "not_found", "error": "profile or resource not found"}]},
   "candidates": [
     {"rank": 1, "fit_tier": "strong_fit", "candidate_name": "...", "eligible": true,
      "total_score": 98.5,

@@ -14,6 +14,7 @@ from typing import Any
 from .config import Settings
 from .eligibility import check_eligibility
 from .extractor import extract_candidate
+from .github import enrich_candidates
 from .llm import LLMAnalysis, LLMError, build_client
 from .models import Candidate, EligibilityResult
 from .parser import ingest_directory
@@ -123,8 +124,7 @@ def run_pipeline(settings: Settings) -> dict[str, Any]:
     candidates, eligibility, extraction_failures = _extract_all(ingestion.parsed)
     analyses, llm_failures = _enrich_with_llm(candidates, eligibility, settings)
 
-    github_results: dict[str, Any] = {}
-    github_failures: list[dict[str, str]] = []
+    github_results, github_failures = enrich_candidates(candidates, settings)
 
     scores, scoring_failures = _score_all(candidates, eligibility, analyses, github_results)
 

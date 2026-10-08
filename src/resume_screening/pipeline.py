@@ -19,7 +19,9 @@ from .extractor import extract_candidate
 from .github import enrich_candidates
 from .llm import LLMAnalysis, LLMError, build_client
 from .models import Candidate, EligibilityResult
+from .output import build_records
 from .parser import ingest_directory
+from .ranking import rank_candidates, score_stats
 from .scoring import ScoreResult, score_candidate
 from .utils import get_logger
 
@@ -165,10 +167,7 @@ def run_pipeline(settings: Settings) -> dict[str, Any]:
 
     eligible = [c for c in candidates if eligibility[c.source_file].eligible]
     rejected = [c for c in candidates if not eligibility[c.source_file].eligible]
-    ranked = sorted(
-        (c for c in eligible if c.source_file in scores),
-        key=lambda c: (-scores[c.source_file].total(), c.name.lower()),
-    )
+    ranked = rank_candidates(eligible, scores)
     unscored = [c for c in eligible if c.source_file not in scores]
 
     log.info(
@@ -195,6 +194,7 @@ def run_pipeline(settings: Settings) -> dict[str, Any]:
             "github_enriched": sum(1 for g in github_results.values() if g.status == "ok"),
             "github_failures": len(github_failures),
             "cache": store.summary(),
+            "score_stats": score_stats(ranked, scores),
             "status": "complete",
         },
         "parse_issues": [r.to_dict() for r in ingestion.resumes if not r.ok],
@@ -204,72 +204,7 @@ def run_pipeline(settings: Settings) -> dict[str, Any]:
             "github": github_failures,
             "scoring": scoring_failures,
         },
-        "candidates": _build_output(candidates, eligibility, scores, ranked, unscored, rejected, analyses, github_results),
+        "candidates": build_records(
+            candidates, eligibility, scores, ranked, unscored, rejected, analyses, github_results
+        ),
     }
-
-
-def _build_output(
-    candidates: list[Candidate],
-    eligibility: dict[str, EligibilityResult],
-    scores: dict[str, ScoreResult],
-    ranked: list[Candidate],
-    unscored: list[Candidate],
-    rejected: list[Candidate],
-    analyses: dict[str, LLMAnalysis],
-    github_results: dict[str, Any],
-) -> list[dict[str, Any]]:
-    def base(candidate: Candidate) -> dict[str, Any]:
-        result = eligibility[candidate.source_file]
-        github = github_results.get(candidate.source_file)
-        return {
-            "candidate_name": candidate.name,
-            "source_file": candidate.source_file,
-            "eligible": result.eligible,
-            "matched_skills": result.matched_skills[:20],
-            "rejection_reasons": result.rejection_reasons,
-            "email": candidate.email,
-            "github_url": candidate.github_url,
-            "github_status": github.status if github else "no_profile",
-            "github_summary": github.summary if github else "",
-            "llm_used": candidate.source_file in analyses,
-        }
-
-    output: list[dict[str, Any]] = []
-    for rank, candidate in enumerate(ranked, start=1):
-        score = scores[candidate.source_file]
-        analysis = analyses.get(candidate.source_file)
-        record = base(candidate)
-        record.update(
-            {
-                "rank": rank,
-                "total_score": score.total(),
-                "score_breakdown": score.breakdown.as_dict(),
-                "project_summary": score.project_summary,
-                "strengths": score.strengths,
-                "concerns": score.concerns,
-                "evidence": score.evidence_by_category(),
-            }
-        )
-        if analysis is not None:
-            record["llm_rationale"] = analysis.rationale
-            record["llm_ai_project_depth"] = analysis.ai_project_depth
-            record["llm_adjustment"] = analysis.adjustment
-        output.append(record)
-
-    for candidate in unscored:
-        record = base(candidate)
-        record.update(
-            {
-                "rank": None,
-                "total_score": None,
-                "concerns": ["Scoring failed for this candidate"],
-            }
-        )
-        output.append(record)
-
-    for candidate in rejected:
-        record = base(candidate)
-        record.update({"rank": None, "total_score": None})
-        output.append(record)
-
-    return output

@@ -86,13 +86,48 @@ def test_every_parsed_resume_appears_exactly_once(settings: Settings) -> None:
     assert sorted(files) == ["alpha.txt", "beta.txt", "delta.txt", "gamma.txt"]
 
 
+def _without_timings(payload) -> dict:
+    """Copy of a result with wall-clock fields removed for comparison."""
+    clone = json.loads(json.dumps(payload))
+    clone["run"].pop("started_at", None)
+    clone["run"].pop("duration_ms", None)
+    clone["summary"].pop("duration_ms", None)
+    clone["summary"].pop("stages_ms", None)
+    return clone
+
+
 def test_result_is_json_serialisable_and_stable(settings: Settings) -> None:
     first = run_pipeline(settings)
     second = run_pipeline(settings)
 
     serialised = json.dumps(first, ensure_ascii=False)
     assert json.loads(serialised)["summary"]["total_resumes"] == 6
-    assert first == second  # deterministic across runs
+    assert _without_timings(first) == _without_timings(second)  # deterministic
+
+
+def test_run_metadata_documents_the_configuration(settings: Settings) -> None:
+    result = run_pipeline(settings)
+    run = result["run"]
+
+    assert run["tool_version"]
+    assert run["python"].startswith("3.")
+    assert run["started_at"].endswith("+00:00")
+    assert run["settings"]["use_github"] is False
+    assert run["settings"]["use_llm"] is False
+    assert run["settings"]["weights"]["ai_project_depth"] == 40
+    assert run["settings"]["weights"]["python_backend"] == 30
+
+    summary = result["summary"]
+    assert summary["duration_ms"] > 0
+    assert set(summary["stages_ms"]) == {
+        "ingest",
+        "extract_and_filter",
+        "llm",
+        "github",
+        "score",
+        "total",
+    }
+    assert summary["stages_ms"]["total"] == summary["duration_ms"]
 
 
 def test_github_is_honoured_as_optional_signal(tmp_path: Path) -> None:

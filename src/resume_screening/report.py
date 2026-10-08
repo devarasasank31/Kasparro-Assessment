@@ -36,9 +36,17 @@ def format_report(result: dict[str, Any], top: int = 10) -> str:
         ("llm used", summary.get("llm_used")),
         ("github enriched", summary.get("github_enriched")),
         ("github issues", summary.get("github_failures")),
+        ("duration (ms)", summary.get("duration_ms")),
     ]
     for label, value in batch_rows:
         lines.append(f"  {label:<24} {value}")
+
+    stages = summary.get("stages_ms", {}) or {}
+    if stages:
+        lines.append(
+            "  stages (ms)               "
+            + "  ".join(f"{name}={value}" for name, value in stages.items())
+        )
 
     if stats.get("count"):
         lines.append("")

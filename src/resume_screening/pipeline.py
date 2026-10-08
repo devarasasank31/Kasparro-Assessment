@@ -10,6 +10,10 @@ aborts the batch.
 from __future__ import annotations
 
 import hashlib
+import platform
+import time
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from typing import Any
 
 from .cache import RunCache
@@ -26,6 +30,41 @@ from .scoring import ScoreResult, score_candidate
 from .utils import get_logger
 
 log = get_logger("pipeline")
+
+
+@contextmanager
+def _timed(stages: dict[str, float], name: str):
+    """Record how long a pipeline stage took, in milliseconds."""
+    started = time.perf_counter()
+    try:
+        yield
+    finally:
+        stages[name] = round((time.perf_counter() - started) * 1000, 1)
+
+
+def _run_metadata(settings: Settings, started_at: datetime, duration_ms: float) -> dict[str, Any]:
+    """Reproducibility block: what ran, when, with which configuration."""
+    from . import __version__
+
+    return {
+        "tool_version": __version__,
+        "python": platform.python_version(),
+        "started_at": started_at.isoformat(),
+        "duration_ms": duration_ms,
+        "settings": {
+            "input_dir": str(settings.input_dir),
+            "output_path": str(settings.output_path),
+            "use_llm": settings.use_llm,
+            "llm_enabled": settings.llm_enabled,
+            "llm_provider": settings.llm_provider,
+            "llm_model": settings.llm_model,
+            "use_github": settings.use_github,
+            "github_max_workers": settings.github_max_workers,
+            "use_cache": settings.use_cache,
+            "limit": settings.limit,
+            "weights": dict(settings.weights),
+        },
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -149,41 +188,54 @@ def run_pipeline(settings: Settings) -> dict[str, Any]:
     if not settings.input_dir.exists():
         raise FileNotFoundError(f"Input directory not found: {settings.input_dir}")
 
-    ingestion = ingest_directory(settings.input_dir)
-    if settings.limit and settings.limit < len(ingestion.resumes):
-        ingestion.resumes = ingestion.resumes[: settings.limit]
-        ingestion.total_files = len(ingestion.resumes)
-        log.info("Limiting run to the first %d resumes", settings.limit)
-    counts = ingestion.counts()
+    started_at = datetime.now(timezone.utc)
+    clock = time.perf_counter()
+    stages: dict[str, float] = {}
+
+    with _timed(stages, "ingest"):
+        ingestion = ingest_directory(settings.input_dir)
+        if settings.limit and settings.limit < len(ingestion.resumes):
+            ingestion.resumes = ingestion.resumes[: settings.limit]
+            ingestion.total_files = len(ingestion.resumes)
+            log.info("Limiting run to the first %d resumes", settings.limit)
+        counts = ingestion.counts()
 
     store = RunCache(settings.cache_dir, enabled=settings.use_cache)
     try:
-        candidates, eligibility, extraction_failures = _extract_all(ingestion.parsed)
-        analyses, llm_failures = _enrich_with_llm(candidates, eligibility, settings, store)
-
-        github_results, github_failures = enrich_candidates(
-            candidates, settings, store=store
-        )
+        with _timed(stages, "extract_and_filter"):
+            candidates, eligibility, extraction_failures = _extract_all(ingestion.parsed)
+        with _timed(stages, "llm"):
+            analyses, llm_failures = _enrich_with_llm(candidates, eligibility, settings, store)
+        with _timed(stages, "github"):
+            github_results, github_failures = enrich_candidates(
+                candidates, settings, store=store
+            )
     finally:
         store.flush()
 
-    scores, scoring_failures = _score_all(candidates, eligibility, analyses, github_results)
+    with _timed(stages, "score"):
+        scores, scoring_failures = _score_all(candidates, eligibility, analyses, github_results)
 
     eligible = [c for c in candidates if eligibility[c.source_file].eligible]
     rejected = [c for c in candidates if not eligibility[c.source_file].eligible]
     ranked = rank_candidates(eligible, scores)
     unscored = [c for c in eligible if c.source_file not in scores]
 
+    duration_ms = round((time.perf_counter() - clock) * 1000, 1)
+    stages["total"] = duration_ms
+
     log.info(
-        "Batch complete: %d files, %d parsed, %d eligible, %d rejected, %d scored",
+        "Batch complete: %d files, %d parsed, %d eligible, %d rejected, %d scored (%.0f ms)",
         counts["total_files"],
         counts["parsed"],
         len(eligible),
         len(rejected),
         len(scores),
+        duration_ms,
     )
 
     return {
+        "run": _run_metadata(settings, started_at, duration_ms),
         "summary": {
             "total_resumes": counts["total_files"],
             "parsed": counts["parsed"],
@@ -199,6 +251,8 @@ def run_pipeline(settings: Settings) -> dict[str, Any]:
             "github_failures": len(github_failures),
             "cache": store.summary(),
             "score_stats": score_stats(ranked, scores),
+            "duration_ms": duration_ms,
+            "stages_ms": stages,
             "status": "complete",
         },
         "parse_issues": [

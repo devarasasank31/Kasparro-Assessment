@@ -80,6 +80,7 @@ class ScoreEvidence(BaseModel):
     label: str
     points: float
     detail: str = ""
+    category: str = ""
 
 
 class ScoreBreakdown(BaseModel):
